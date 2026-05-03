@@ -12,6 +12,11 @@ pub struct AprilTagDetection {
     pub confidence: f32, // The decision margin from the GrayModel
     pub center_x: f32,   // Center pixel X
     pub center_y: f32,   // Center pixel Y
+
+    pub tx: f32,
+    pub ty: f32,
+    pub tz: f32,
+
     pub yaw: f32,
     pub pitch: f32,
     pub roll: f32,

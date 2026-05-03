@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 memmap2 = "0.9.10"
 serde = { version = "1.0.228", features = ["derive"] }
+serialport = "4.9.0"
 
 [profile.release]
 lto = "fat"

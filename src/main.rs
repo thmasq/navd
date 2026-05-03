@@ -1,4 +1,9 @@
+mod control;
+mod nav;
+mod sensor;
 mod state;
+mod uart;
+mod udp;
 mod vision;
 
 use memmap2::MmapOptions;
@@ -37,6 +42,16 @@ fn main() {
 
     let shared_tags_ptr = SharedMemoryPtr(mmap.as_ptr() as *const vision::SharedTags);
 
+    let serial_port = serialport::new("/dev/ttyS0", 115_200)
+        .timeout(Duration::from_millis(10))
+        .open()
+        .expect("Failed to open /dev/ttyS0");
+
+    let port_for_control = serial_port
+        .try_clone()
+        .expect("Failed to clone serial port");
+    let port_for_sensors = serial_port;
+
     // ---------------------------------------------------------
     // Thread 1: vision_reader (~30 Hz)
     // ---------------------------------------------------------
@@ -49,7 +64,7 @@ fn main() {
             let shared = unsafe { &*thread_safe_wrapper.0 };
 
             if let Some(snapshot) = shared.read_seqlock() {
-                let now_ms = capture_timestamp_us();
+                let now_ms = capture_timestamp_us() / 1000;
                 ctx_vision.vision.update(snapshot, now_ms);
             }
             std::thread::sleep(Duration::from_millis(33)); // ~30 Hz
@@ -61,14 +76,7 @@ fn main() {
     // ---------------------------------------------------------
     let ctx_udp = Arc::clone(&ctx);
     std::thread::spawn(move || {
-        // let socket = UdpSocket::bind("0.0.0.0:5005").unwrap();
-        loop {
-            // Block on recvfrom
-            // Decode 8-byte packet
-            // ctx_udp.rc.update(cmd, now_ms);
-            // Handle RC_OVERRIDE state transitions
-            std::thread::sleep(Duration::from_millis(100)); // Stub
-        }
+        udp::listener_thread(ctx_udp);
     });
 
     // ---------------------------------------------------------
@@ -76,13 +84,7 @@ fn main() {
     // ---------------------------------------------------------
     let ctx_nav = Arc::clone(&ctx);
     std::thread::spawn(move || {
-        loop {
-            // Read ctx_nav.vision.snapshot
-            // Run steering calc using Goalpost constraints
-            // Update drive command
-            // ctx_nav.nav.update(left_cmd, right_cmd);
-            std::thread::sleep(Duration::from_millis(33));
-        }
+        nav::navigator_thread(ctx_nav);
     });
 
     // ---------------------------------------------------------
@@ -90,14 +92,7 @@ fn main() {
     // ---------------------------------------------------------
     let ctx_control = Arc::clone(&ctx);
     std::thread::spawn(move || {
-        // Exclusive access to /dev/ttyAMA0 setup
-        loop {
-            // Check state
-            // Read ctx_control.nav.read() OR ctx_control.rc.cmd.load()
-            // Apply Lift Interlock guarantee
-            // Build UART Frame and tx
-            std::thread::sleep(Duration::from_millis(20)); // 50 Hz fixed tick
-        }
+        control::control_thread(ctx_control, port_for_control);
     });
 
     // ---------------------------------------------------------
@@ -105,12 +100,7 @@ fn main() {
     // ---------------------------------------------------------
     let ctx_sensors = Arc::clone(&ctx);
     std::thread::spawn(move || {
-        loop {
-            // tx SENSOR_POLL over UART
-            // rx SENSOR_STATUS
-            // ctx_sensors.sensors.update(flags, heading);
-            std::thread::sleep(Duration::from_millis(50)); // 20 Hz fixed tick
-        }
+        sensor::sensor_poll_thread(ctx_sensors, port_for_sensors);
     });
 
     loop {

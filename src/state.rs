@@ -48,6 +48,7 @@ pub struct NavCommand {
 
 pub struct NavShared {
     cmd: AtomicU16,
+    pub current_goalpost: std::sync::atomic::AtomicU16,
 }
 
 impl NavShared {
@@ -86,6 +87,16 @@ impl RcShared {
 
         self.cmd.store(packed, Ordering::Relaxed);
         self.last_packet_ms.store(time_ms, Ordering::Release);
+    }
+
+    pub fn read(&self) -> RcCommand {
+        let packed = self.cmd.load(Ordering::Relaxed);
+        RcCommand {
+            left: (packed >> 24) as i8,
+            right: ((packed >> 16) & 0xFF) as i8,
+            lift: ((packed >> 8) & 0xFF) as i8,
+            flags: (packed & 0xFF) as u8,
+        }
     }
 }
 
@@ -126,6 +137,7 @@ impl NavdContext {
             },
             nav: NavShared {
                 cmd: AtomicU16::new(0),
+                current_goalpost: std::sync::atomic::AtomicU16::new(1),
             },
             rc: RcShared {
                 cmd: AtomicU32::new(0),
