@@ -1,0 +1,13 @@
+[package]
+name = "navd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+memmap2 = "0.9.10"
+serde = { version = "1.0.228", features = ["derive"] }
+
+[profile.release]
+lto = "fat"
+opt-level = 3
+codegen-units = 1

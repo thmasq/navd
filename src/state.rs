@@ -1,0 +1,140 @@
+use crate::vision::MAX_TAGS;
+
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum RobotState {
+    Boot = 0,
+    Navigating = 1,
+    Yielding = 2,
+    Panicking = 3,
+    RcOverride = 4,
+}
+
+// ---------------
+// Vision Domain
+// ---------------
+#[derive(Clone)]
+pub struct VisionSnapshot {
+    pub timestamp_us: u64,
+    pub tag_count: u32,
+    pub tags: [crate::vision::AprilTagDetection; MAX_TAGS],
+}
+
+pub struct VisionShared {
+    pub snapshot: Mutex<Option<VisionSnapshot>>,
+    pub last_tag_seen_ms: AtomicU64,
+}
+
+impl VisionShared {
+    pub fn update(&self, new_data: VisionSnapshot, current_time_ms: u64) {
+        if let Ok(mut snap) = self.snapshot.lock() {
+            *snap = Some(new_data);
+        }
+        self.last_tag_seen_ms
+            .store(current_time_ms, Ordering::Release);
+    }
+}
+
+// -------------------------
+// Navigation & RC Domains
+// -------------------------
+pub struct NavCommand {
+    pub left: i8,
+    pub right: i8,
+}
+
+pub struct NavShared {
+    cmd: AtomicU16,
+}
+
+impl NavShared {
+    pub fn update(&self, left: i8, right: i8) {
+        let packed = ((left as u8 as u16) << 8) | (right as u8 as u16);
+        self.cmd.store(packed, Ordering::Relaxed);
+    }
+
+    pub fn read(&self) -> NavCommand {
+        let packed = self.cmd.load(Ordering::Relaxed);
+        NavCommand {
+            left: (packed >> 8) as i8,
+            right: (packed & 0xFF) as i8,
+        }
+    }
+}
+
+pub struct RcCommand {
+    pub left: i8,
+    pub right: i8,
+    pub lift: i8,
+    pub flags: u8,
+}
+
+pub struct RcShared {
+    cmd: AtomicU32,
+    pub last_packet_ms: AtomicU64,
+}
+
+impl RcShared {
+    pub fn update(&self, cmd: RcCommand, time_ms: u64) {
+        let packed = ((cmd.left as u8 as u32) << 24)
+            | ((cmd.right as u8 as u32) << 16)
+            | ((cmd.lift as u8 as u32) << 8)
+            | (cmd.flags as u32);
+
+        self.cmd.store(packed, Ordering::Relaxed);
+        self.last_packet_ms.store(time_ms, Ordering::Release);
+    }
+}
+
+// ---------------
+// Sensor Domain
+// ---------------
+pub struct SensorShared {
+    pub flags: AtomicU8,
+    pub heading_bits: AtomicU32,
+}
+
+impl SensorShared {
+    pub fn update(&self, flags: u8, heading: f32) {
+        self.heading_bits
+            .store(heading.to_bits(), Ordering::Relaxed);
+        self.flags.store(flags, Ordering::Release);
+    }
+}
+
+// ----------------
+// Global Context
+// ----------------
+pub struct NavdContext {
+    pub state: AtomicU8,
+    pub vision: VisionShared,
+    pub nav: NavShared,
+    pub rc: RcShared,
+    pub sensors: SensorShared,
+}
+
+impl NavdContext {
+    pub fn new() -> Self {
+        Self {
+            state: AtomicU8::new(RobotState::Boot as u8),
+            vision: VisionShared {
+                snapshot: Mutex::new(None),
+                last_tag_seen_ms: AtomicU64::new(0),
+            },
+            nav: NavShared {
+                cmd: AtomicU16::new(0),
+            },
+            rc: RcShared {
+                cmd: AtomicU32::new(0),
+                last_packet_ms: AtomicU64::new(0),
+            },
+            sensors: SensorShared {
+                flags: AtomicU8::new(0),
+                heading_bits: AtomicU32::new(0.0_f32.to_bits()),
+            },
+        }
+    }
+}

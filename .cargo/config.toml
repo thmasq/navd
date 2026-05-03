@@ -1,0 +1,24 @@
+[target.aarch64-unknown-linux-musl]
+linker = "/opt/aarch64-cross/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc"
+rustflags = [
+  "-L",
+  "/home/thomasq/pi-sysroot/usr/lib",
+  "-L",
+  "/home/thomasq/pi-sysroot/lib",
+  "-C",
+  "link-arg=--sysroot=/home/thomasq/pi-sysroot",
+  "-C",
+  "target-feature=-crt-static",
+  "-C",
+  "link-arg=-fuse-ld=lld",
+  "-C",
+  "target-cpu=cortex-a53",
+]
+
+[env]
+PKG_CONFIG_ALLOW_CROSS_aarch64_unknown_linux_musl = "1"
+PKG_CONFIG_SYSROOT_DIR_aarch64_unknown_linux_musl = "/home/thomasq/pi-sysroot"
+PKG_CONFIG_PATH_aarch64_unknown_linux_musl = "/home/thomasq/pi-sysroot/usr/lib/pkgconfig"
+PKG_CONFIG_ALL_DYNAMIC = "1"
+
+BINDGEN_EXTRA_CLANG_ARGS = { value = "--sysroot=/home/thomasq/pi-sysroot -I/home/thomasq/pi-sysroot/usr/include -I/home/thomasq/pi-sysroot/usr/include/c++/15.2.0 -I/home/thomasq/pi-sysroot/usr/include/c++/15.2.0/aarch64-alpine-linux-musl", relative = false }

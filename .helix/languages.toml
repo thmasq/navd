@@ -1,0 +1,8 @@
+[[language]]
+name = "rust"
+
+[language-server.rust-analyzer.config.cargo]
+target = "aarch64-unknown-linux-musl"
+
+[language-server.rust-analyzer.config.check]
+command = "check"
