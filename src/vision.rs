@@ -46,17 +46,17 @@ impl SharedTags {
                 continue;
             }
 
-            let mut tags_copy = [unsafe { std::mem::zeroed::<AprilTagDetection>() }; MAX_TAGS];
+            let tags_copy: [AprilTagDetection; MAX_TAGS];
             let tag_count_copy: u32;
             let ts_copy: u64;
 
             unsafe {
-                std::ptr::copy_nonoverlapping(self.tags.as_ptr(), tags_copy.as_mut_ptr(), MAX_TAGS);
+                tags_copy = std::ptr::read_volatile(&raw const self.tags);
                 tag_count_copy = std::ptr::read_volatile(&raw const self.tag_count);
                 ts_copy = std::ptr::read_volatile(&raw const self.timestamp_us);
             }
 
-            std::sync::atomic::compiler_fence(Ordering::Acquire);
+            std::sync::atomic::fence(Ordering::Acquire);
 
             let seq2 = self.seq.load(Ordering::Acquire);
 
