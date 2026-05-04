@@ -14,6 +14,7 @@ mod vision;
 
 use memmap2::MmapOptions;
 use state::NavdContext;
+use std::ffi::CString;
 use std::fs::OpenOptions;
 use std::sync::Arc;
 use std::time::Duration;
@@ -57,22 +58,43 @@ fn main() {
     let port_for_sensors = serial_port;
 
     // ---------------------------------------------------------
-    // Thread 1: vision_reader (~30 Hz)
+    // Thread 1: vision_reader (Semaphore Event-Driven)
     // ---------------------------------------------------------
     let ctx_vision = Arc::clone(&ctx);
 
     std::thread::spawn(move || {
         let thread_safe_wrapper = shared_tags_ptr;
 
+        let sem_name = CString::new("/navd_vision_sem").expect("CString::new failed");
+
+        let sem = unsafe {
+            // O_CREAT: Create if it doesn't exist.
+            // 0o666: Read/write permissions.
+            // 0: Initial value (start locked).
+            let s = libc::sem_open(sem_name.as_ptr(), libc::O_CREAT, 0o666, 0);
+            if s == libc::SEM_FAILED {
+                panic!("Failed to open /navd_vision_sem POSIX semaphore");
+            }
+            s
+        };
+
+        println!("vision_reader: Waiting for semaphore...");
+
         loop {
+            unsafe {
+                libc::sem_wait(sem);
+            }
+
             let shared = unsafe { &*thread_safe_wrapper.0 };
 
             if let Some(snapshot) = shared.read_seqlock() {
                 let now_ms = capture_timestamp_us() / 1000;
                 ctx_vision.vision.update(snapshot, now_ms);
+
                 ctx_vision.vision.new_frame_cv.notify_one();
+            } else {
+                eprintln!("vision_reader: Torn read detected despite semaphore.");
             }
-            std::thread::sleep(Duration::from_millis(33)); // ~30 Hz
         }
     });
 
