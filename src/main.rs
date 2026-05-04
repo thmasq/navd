@@ -88,9 +88,7 @@ fn main() {
             let shared = unsafe { &*thread_safe_wrapper.0 };
 
             if let Some(snapshot) = shared.read_seqlock() {
-                let now_ms = capture_timestamp_us() / 1000;
-                ctx_vision.vision.update(snapshot, now_ms);
-
+                ctx_vision.vision.update(snapshot);
                 ctx_vision.vision.new_frame_cv.notify_one();
             } else {
                 eprintln!("vision_reader: Torn read detected despite semaphore.");

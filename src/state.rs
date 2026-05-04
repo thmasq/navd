@@ -30,12 +30,14 @@ pub struct VisionShared {
 }
 
 impl VisionShared {
-    pub fn update(&self, new_data: VisionSnapshot, current_time_ms: u64) {
+    pub fn update(&self, new_data: VisionSnapshot) {
+        let capture_time_ms = new_data.timestamp_us / 1000;
+
         if let Ok(mut snap) = self.snapshot.lock() {
             *snap = Some(new_data);
         }
         self.last_tag_seen_ms
-            .store(current_time_ms, Ordering::Release);
+            .store(capture_time_ms, Ordering::Release);
     }
 }
 

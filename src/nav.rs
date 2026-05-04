@@ -46,6 +46,17 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
         }
 
         if let Some(snap) = snapshot {
+            let now_us = crate::capture_timestamp_us();
+            let frame_age_ms = now_us.saturating_sub(snap.timestamp_us) / 1000;
+
+            if frame_age_ms > 100 {
+                println!(
+                    "WARNING: Vision data is stale ({} ms old). Skipping frame.",
+                    frame_age_ms
+                );
+                continue;
+            }
+
             let active_tags = &snap.tags[0..snap.tag_count as usize];
 
             if current_state == RobotState::Navigating as u8
