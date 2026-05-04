@@ -1,8 +1,8 @@
-use std::io::Read;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use serialport::SerialPort;
+use std::io::Read;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 
 use crate::state::{NavdContext, RobotState};
 use crate::uart;
@@ -31,7 +31,10 @@ pub fn sensor_poll_thread(ctx: Arc<NavdContext>, mut port: Box<dyn SerialPort>) 
                 Ok(n) if n > 0 => {
                     bytes_read += n;
 
-                    if let Some(start_idx) = buf[..bytes_read].iter().position(|&b| b == uart::START_BYTE) {
+                    if let Some(start_idx) = buf[..bytes_read]
+                        .iter()
+                        .position(|&b| b == uart::START_BYTE)
+                    {
                         if bytes_read >= start_idx + 3 {
                             let cmd = buf[start_idx + 1];
                             let len = buf[start_idx + 2] as usize;
@@ -48,9 +51,10 @@ pub fn sensor_poll_thread(ctx: Arc<NavdContext>, mut port: Box<dyn SerialPort>) 
                                 if uart::crc8_maxim(frame_for_crc) == expected_crc {
                                     if cmd == uart::CMD_SENSOR_STATUS && len == 5 {
                                         let flags = buf[payload_start];
-                                        
+
                                         let mut heading_bytes = [0u8; 4];
-                                        heading_bytes.copy_from_slice(&buf[payload_start + 1..payload_end]);
+                                        heading_bytes
+                                            .copy_from_slice(&buf[payload_start + 1..payload_end]);
                                         let heading = f32::from_le_bytes(heading_bytes);
 
                                         ctx.sensors.update(flags, heading);
@@ -58,8 +62,13 @@ pub fn sensor_poll_thread(ctx: Arc<NavdContext>, mut port: Box<dyn SerialPort>) 
                                         if (flags & 0x07) != 0 {
                                             let state = ctx.state.load(Ordering::Acquire);
                                             if state == RobotState::Navigating as u8 {
-                                                println!("CRITICAL: Collision detected! Transitioning to PANICKING.");
-                                                ctx.state.store(RobotState::Panicking as u8, Ordering::Release);[cite: 1]
+                                                println!(
+                                                    "CRITICAL: Collision detected! Transitioning to PANICKING."
+                                                );
+                                                ctx.state.store(
+                                                    RobotState::Panicking as u8,
+                                                    Ordering::Release,
+                                                );
                                             }
                                         }
                                     }
