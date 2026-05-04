@@ -94,6 +94,7 @@ dependencies = [
 name = "navd"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "memmap2",
  "serde",
  "serialport",

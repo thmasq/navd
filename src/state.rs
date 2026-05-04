@@ -25,6 +25,7 @@ pub struct VisionSnapshot {
 
 pub struct VisionShared {
     pub snapshot: Mutex<Option<VisionSnapshot>>,
+    pub new_frame_cv: std::sync::Condvar,
     pub last_tag_seen_ms: AtomicU64,
 }
 
@@ -133,6 +134,7 @@ impl NavdContext {
             state: AtomicU8::new(RobotState::Boot as u8),
             vision: VisionShared {
                 snapshot: Mutex::new(None),
+                new_frame_cv: std::sync::Condvar::new(),
                 last_tag_seen_ms: AtomicU64::new(0),
             },
             nav: NavShared {

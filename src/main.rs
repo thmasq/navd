@@ -70,6 +70,7 @@ fn main() {
             if let Some(snapshot) = shared.read_seqlock() {
                 let now_ms = capture_timestamp_us() / 1000;
                 ctx_vision.vision.update(snapshot, now_ms);
+                ctx_vision.vision.new_frame_cv.notify_one();
             }
             std::thread::sleep(Duration::from_millis(33)); // ~30 Hz
         }

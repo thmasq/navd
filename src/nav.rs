@@ -9,6 +9,7 @@ const GOALPOST_SPACING_MM: f32 = 1000.0;
 const T_LOST_MS: u64 = 1500;
 const SENTINEL_TAG_ID: u16 = 587;
 const YIELD_DISTANCE_MM: f32 = 500.0;
+const BLEND_START_MM: f32 = 1000.0;
 
 const KP_LAT: f32 = 0.05;
 const KP_YAW: f32 = 20.0;
@@ -19,6 +20,17 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
     println!("Navigator thread started.");
 
     loop {
+        let snapshot = {
+            let lock = ctx.vision.snapshot.lock().unwrap();
+            let (new_lock, _timeout_result) = ctx
+                .vision
+                .new_frame_cv
+                .wait_timeout(lock, Duration::from_millis(33))
+                .unwrap();
+
+            new_lock.clone()
+        };
+
         let current_state = ctx.state.load(Ordering::Acquire);
         let now_ms = crate::capture_timestamp_us() / 1000;
 
@@ -32,11 +44,6 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
             ctx.nav.update(0, 0);
             continue;
         }
-
-        let snapshot = {
-            let lock = ctx.vision.snapshot.lock().unwrap();
-            lock.clone()
-        };
 
         if let Some(snap) = snapshot {
             let active_tags = &snap.tags[0..snap.tag_count as usize];
@@ -90,8 +97,6 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
                 ctx.nav.update(left_cmd, right_cmd);
             }
         }
-
-        std::thread::sleep(Duration::from_millis(33));
     }
 }
 
@@ -127,16 +132,18 @@ fn calculate_steering(
         (Some(l), None) => {
             let tx_visible = l.tx;
             let tx_inferred = tx_visible + GOALPOST_SPACING_MM;
+            let tx_midpoint = f32::midpoint(tx_visible, tx_inferred);
 
-            // Architecture specifies applying a confidence weight based on tz.
-            // For now, we use a simple average, but you can dynamically weight
-            // `tx_visible` more heavily as `l.tz` approaches 0.
-            f32::midpoint(tx_visible, tx_inferred)
+            let w = (1.0 - (l.tz / BLEND_START_MM)).clamp(0.0, 0.6);
+            tx_midpoint + w * (tx_visible - tx_midpoint)
         }
         (None, Some(r)) => {
             let tx_visible = r.tx;
             let tx_inferred = tx_visible - GOALPOST_SPACING_MM;
-            f32::midpoint(tx_visible, tx_inferred)
+            let tx_midpoint = f32::midpoint(tx_visible, tx_inferred);
+
+            let w = (1.0 - (r.tz / BLEND_START_MM)).clamp(0.0, 0.6);
+            tx_midpoint + w * (tx_visible - tx_midpoint)
         }
         _ => 0.0,
     };
