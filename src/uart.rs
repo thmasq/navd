@@ -8,7 +8,7 @@ pub const CMD_LIFT: u8 = 0x05;
 pub const CMD_SENSOR_STATUS: u8 = 0x10;
 
 /// Calculates CRC-8/MAXIM (Dow-CRC)
-/// Polynomial 0x31, Init 0x00, RefIn True, RefOut True, XorOut 0x00
+/// Polynomial 0x31, Init 0x00, `RefIn` True, `RefOut` True, `XorOut` 0x00
 pub fn crc8_maxim(data: &[u8]) -> u8 {
     let mut crc = 0x00;
     for &byte in data {

@@ -1,3 +1,5 @@
+#![allow(clippy::similar_names)]
+
 use serialport::SerialPort;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -6,7 +8,7 @@ use std::time::Duration;
 use crate::state::{NavdContext, RobotState};
 use crate::uart;
 
-pub fn control_thread(ctx: Arc<NavdContext>, mut port: Box<dyn SerialPort>) {
+pub fn control_thread(ctx: &Arc<NavdContext>, mut port: Box<dyn SerialPort>) {
     println!("Control thread started at 50 Hz.");
 
     loop {
@@ -62,7 +64,7 @@ pub fn control_thread(ctx: Arc<NavdContext>, mut port: Box<dyn SerialPort>) {
 
         let frame = uart::build_frame(out_cmd, &payload);
         if let Err(e) = port.write_all(&frame) {
-            eprintln!("UART Write Error: {}", e);
+            eprintln!("UART Write Error: {e}");
         }
 
         std::thread::sleep(Duration::from_millis(20));

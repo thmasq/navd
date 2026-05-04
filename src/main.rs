@@ -1,3 +1,9 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap
+)]
+
 mod control;
 mod nav;
 mod sensor;
@@ -25,13 +31,11 @@ fn main() {
     let ctx = Arc::new(NavdContext::new());
 
     let file = loop {
-        match OpenOptions::new().read(true).open("/dev/shm/tags.bin") {
-            Ok(f) => break f,
-            Err(_) => {
-                println!("Waiting for vision process to initialize /dev/shm/tags.bin...");
-                std::thread::sleep(Duration::from_millis(500));
-            }
+        if let Ok(f) = OpenOptions::new().read(true).open("/dev/shm/tags.bin") {
+            break f;
         }
+        println!("Waiting for vision process to initialize /dev/shm/tags.bin...");
+        std::thread::sleep(Duration::from_millis(500));
     };
 
     let mmap = unsafe {
@@ -40,7 +44,7 @@ fn main() {
             .expect("Failed to mmap tags.bin")
     };
 
-    let shared_tags_ptr = SharedMemoryPtr(mmap.as_ptr() as *const vision::SharedTags);
+    let shared_tags_ptr = SharedMemoryPtr(mmap.as_ptr().cast::<vision::SharedTags>());
 
     let serial_port = serialport::new("/dev/ttyS0", 115_200)
         .timeout(Duration::from_millis(10))
@@ -76,7 +80,7 @@ fn main() {
     // ---------------------------------------------------------
     let ctx_udp = Arc::clone(&ctx);
     std::thread::spawn(move || {
-        udp::listener_thread(ctx_udp);
+        udp::listener_thread(&ctx_udp);
     });
 
     // ---------------------------------------------------------
@@ -84,7 +88,7 @@ fn main() {
     // ---------------------------------------------------------
     let ctx_nav = Arc::clone(&ctx);
     std::thread::spawn(move || {
-        nav::navigator_thread(ctx_nav);
+        nav::navigator_thread(&ctx_nav);
     });
 
     // ---------------------------------------------------------
@@ -92,7 +96,7 @@ fn main() {
     // ---------------------------------------------------------
     let ctx_control = Arc::clone(&ctx);
     std::thread::spawn(move || {
-        control::control_thread(ctx_control, port_for_control);
+        control::control_thread(&ctx_control, port_for_control);
     });
 
     // ---------------------------------------------------------
@@ -100,7 +104,7 @@ fn main() {
     // ---------------------------------------------------------
     let ctx_sensors = Arc::clone(&ctx);
     std::thread::spawn(move || {
-        sensor::sensor_poll_thread(ctx_sensors, port_for_sensors);
+        sensor::sensor_poll_thread(&ctx_sensors, port_for_sensors);
     });
 
     loop {

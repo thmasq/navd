@@ -53,7 +53,7 @@ pub struct NavShared {
 
 impl NavShared {
     pub fn update(&self, left: i8, right: i8) {
-        let packed = ((left as u8 as u16) << 8) | (right as u8 as u16);
+        let packed = (u16::from(left as u8) << 8) | u16::from(right as u8);
         self.cmd.store(packed, Ordering::Relaxed);
     }
 
@@ -79,11 +79,11 @@ pub struct RcShared {
 }
 
 impl RcShared {
-    pub fn update(&self, cmd: RcCommand, time_ms: u64) {
-        let packed = ((cmd.left as u8 as u32) << 24)
-            | ((cmd.right as u8 as u32) << 16)
-            | ((cmd.lift as u8 as u32) << 8)
-            | (cmd.flags as u32);
+    pub fn update(&self, cmd: &RcCommand, time_ms: u64) {
+        let packed = (u32::from(cmd.left as u8) << 24)
+            | (u32::from(cmd.right as u8) << 16)
+            | (u32::from(cmd.lift as u8) << 8)
+            | u32::from(cmd.flags);
 
         self.cmd.store(packed, Ordering::Relaxed);
         self.last_packet_ms.store(time_ms, Ordering::Release);
@@ -128,7 +128,7 @@ pub struct NavdContext {
 }
 
 impl NavdContext {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             state: AtomicU8::new(RobotState::Boot as u8),
             vision: VisionShared {

@@ -15,7 +15,7 @@ const KP_YAW: f32 = 20.0;
 const BASE_SPEED: f32 = 40.0;
 const APPROACH_SPEED: f32 = 20.0;
 
-pub fn navigator_thread(ctx: Arc<NavdContext>) {
+pub fn navigator_thread(ctx: &Arc<NavdContext>) {
     println!("Navigator thread started.");
 
     loop {
@@ -23,14 +23,14 @@ pub fn navigator_thread(ctx: Arc<NavdContext>) {
         let now_ms = crate::capture_timestamp_us() / 1000;
 
         let last_seen = ctx.vision.last_tag_seen_ms.load(Ordering::Acquire);
-        if current_state == RobotState::Navigating as u8 {
-            if now_ms.saturating_sub(last_seen) > T_LOST_MS {
-                println!("Lost visual contact for >1500ms. Transitioning to PANICKING.");
-                ctx.state
-                    .store(RobotState::Panicking as u8, Ordering::Release);
-                ctx.nav.update(0, 0);
-                continue;
-            }
+        if current_state == RobotState::Navigating as u8
+            && now_ms.saturating_sub(last_seen) > T_LOST_MS
+        {
+            println!("Lost visual contact for >1500ms. Transitioning to PANICKING.");
+            ctx.state
+                .store(RobotState::Panicking as u8, Ordering::Release);
+            ctx.nav.update(0, 0);
+            continue;
         }
 
         let snapshot = {
@@ -41,16 +41,15 @@ pub fn navigator_thread(ctx: Arc<NavdContext>) {
         if let Some(snap) = snapshot {
             let active_tags = &snap.tags[0..snap.tag_count as usize];
 
-            if current_state == RobotState::Navigating as u8 {
-                if let Some(sentinel) = active_tags.iter().find(|t| t.id == SENTINEL_TAG_ID) {
-                    if sentinel.distance_mm < YIELD_DISTANCE_MM {
-                        println!("Reached sentinel tag. Transitioning to YIELDING.");
-                        ctx.state
-                            .store(RobotState::Yielding as u8, Ordering::Release);
-                        ctx.nav.update(0, 0);
-                        continue;
-                    }
-                }
+            if current_state == RobotState::Navigating as u8
+                && let Some(sentinel) = active_tags.iter().find(|t| t.id == SENTINEL_TAG_ID)
+                && sentinel.distance_mm < YIELD_DISTANCE_MM
+            {
+                println!("Reached sentinel tag. Transitioning to YIELDING.");
+                ctx.state
+                    .store(RobotState::Yielding as u8, Ordering::Release);
+                ctx.nav.update(0, 0);
+                continue;
             }
 
             let mut target_goalpost = ctx.nav.current_goalpost.load(Ordering::Relaxed);
@@ -124,7 +123,7 @@ fn calculate_steering(
     };
 
     let tx_target = match (left_tag, right_tag) {
-        (Some(l), Some(r)) => (l.tx + r.tx) / 2.0,
+        (Some(l), Some(r)) => f32::midpoint(l.tx, r.tx),
         (Some(l), None) => {
             let tx_visible = l.tx;
             let tx_inferred = tx_visible + GOALPOST_SPACING_MM;
@@ -132,12 +131,12 @@ fn calculate_steering(
             // Architecture specifies applying a confidence weight based on tz.
             // For now, we use a simple average, but you can dynamically weight
             // `tx_visible` more heavily as `l.tz` approaches 0.
-            (tx_visible + tx_inferred) / 2.0
+            f32::midpoint(tx_visible, tx_inferred)
         }
         (None, Some(r)) => {
             let tx_visible = r.tx;
             let tx_inferred = tx_visible - GOALPOST_SPACING_MM;
-            (tx_visible + tx_inferred) / 2.0
+            f32::midpoint(tx_visible, tx_inferred)
         }
         _ => 0.0,
     };
@@ -145,7 +144,7 @@ fn calculate_steering(
     let lateral_error = tx_target;
     let heading_error = closer_tag.yaw;
 
-    let correction = (KP_LAT * lateral_error) + (KP_YAW * heading_error);
+    let correction = KP_YAW.mul_add(heading_error, KP_LAT * lateral_error);
 
     let left_cmd = (current_base_speed + correction).clamp(-100.0, 100.0) as i8;
     let right_cmd = (current_base_speed - correction).clamp(-100.0, 100.0) as i8;

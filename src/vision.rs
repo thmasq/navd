@@ -52,8 +52,8 @@ impl SharedTags {
 
             unsafe {
                 std::ptr::copy_nonoverlapping(self.tags.as_ptr(), tags_copy.as_mut_ptr(), MAX_TAGS);
-                tag_count_copy = std::ptr::read_volatile(&self.tag_count);
-                ts_copy = std::ptr::read_volatile(&self.timestamp_us);
+                tag_count_copy = std::ptr::read_volatile(&raw const self.tag_count);
+                ts_copy = std::ptr::read_volatile(&raw const self.timestamp_us);
             }
 
             std::sync::atomic::compiler_fence(Ordering::Acquire);

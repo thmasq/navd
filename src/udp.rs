@@ -1,10 +1,12 @@
+#![allow(clippy::similar_names)]
+
 use std::net::UdpSocket;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use crate::state::{NavdContext, RcCommand, RobotState};
 
-pub fn listener_thread(ctx: Arc<NavdContext>) {
+pub fn listener_thread(ctx: &Arc<NavdContext>) {
     let socket = UdpSocket::bind("0.0.0.0:5005").expect("Failed to bind UDP port");
 
     socket
@@ -19,21 +21,21 @@ pub fn listener_thread(ctx: Arc<NavdContext>) {
         match socket.recv_from(&mut buf) {
             Ok((size, _src)) => {
                 if size == 8 {
-                    handle_packet(&ctx, &buf);
+                    handle_packet(ctx, buf);
                 } else {
-                    eprintln!("Received malformed UDP packet of size {}", size);
+                    eprintln!("Received malformed UDP packet of size {size}");
                 }
             }
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::WouldBlock {
-                    eprintln!("UDP Socket error: {}", e);
+                    eprintln!("UDP Socket error: {e}");
                 }
             }
         }
     }
 }
 
-fn handle_packet(ctx: &Arc<NavdContext>, buf: &[u8; 8]) {
+fn handle_packet(ctx: &Arc<NavdContext>, buf: [u8; 8]) {
     let packet_type = buf[0];
     let left = buf[1] as i8;
     let right = buf[2] as i8;
@@ -45,7 +47,7 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: &[u8; 8]) {
 
     match packet_type {
         0x01 => {
-            // TYPE = 0x01: Drive/Operate command[cite: 1]
+            // TYPE = 0x01: Drive/Operate command
             let current_state = ctx.state.load(Ordering::Acquire);
 
             // Edge-trigger transition to RC_OVERRIDE if not already in it
@@ -61,7 +63,7 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: &[u8; 8]) {
                 lift,
                 flags,
             };
-            ctx.rc.update(cmd, now_ms);
+            ctx.rc.update(&cmd, now_ms);
         }
         0x02 => {
             // TYPE = 0x02: Return to autonomous mode
@@ -70,18 +72,14 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: &[u8; 8]) {
             if current_state == RobotState::RcOverride as u8 {
                 let target_goalpost = ctx.nav.current_goalpost.load(Ordering::Relaxed);
 
-                let is_visible = if let Ok(snap_lock) = ctx.vision.snapshot.lock() {
-                    if let Some(snap) = snap_lock.as_ref() {
+                let is_visible = ctx.vision.snapshot.lock().is_ok_and(|snap_lock| {
+                    snap_lock.as_ref().is_some_and(|snap| {
                         let active_tags = &snap.tags[0..snap.tag_count as usize];
                         active_tags
                             .iter()
                             .any(|t| t.id == target_goalpost || t.id == target_goalpost + 1)
-                    } else {
-                        false // No snapshot available yet
-                    }
-                } else {
-                    false // Mutex poisoned
-                };
+                    })
+                });
 
                 if is_visible {
                     println!(
@@ -101,7 +99,7 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: &[u8; 8]) {
             }
         }
         _ => {
-            eprintln!("Received unknown packet TYPE: {}", packet_type);
+            eprintln!("Received unknown packet TYPE: {packet_type}");
         }
     }
 }
