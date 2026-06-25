@@ -131,7 +131,21 @@ pub struct NavdContext {
 }
 
 impl NavdContext {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
+        let start_pair = if std::env::var("START_SMALLEST_PAIR").is_ok() {
+            0
+        } else if let Ok(val) = std::env::var("START_PAIR") {
+            let mut p = val.parse::<u16>().unwrap_or(1);
+            if p == 0 {
+                p = 1;
+            } else if p % 2 == 0 {
+                p -= 1;
+            }
+            p
+        } else {
+            1
+        };
+
         Self {
             state: AtomicU8::new(RobotState::Boot as u8),
             vision: VisionShared {
@@ -141,7 +155,7 @@ impl NavdContext {
             },
             nav: NavShared {
                 cmd: AtomicU16::new(0),
-                current_goalpost: std::sync::atomic::AtomicU16::new(1),
+                current_goalpost: std::sync::atomic::AtomicU16::new(start_pair),
             },
             rc: RcShared {
                 cmd: AtomicU32::new(0),
