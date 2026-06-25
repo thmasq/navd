@@ -16,7 +16,7 @@ use memmap2::MmapOptions;
 use state::NavdContext;
 use std::ffi::CString;
 use std::fs::OpenOptions;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[derive(Clone, Copy)]
@@ -51,6 +51,12 @@ fn main() {
         .timeout(Duration::from_millis(10))
         .open()
         .expect("Failed to open /dev/ttyS0");
+
+    let port_for_cleanup = Arc::new(Mutex::new(Some(
+        serial_port
+            .try_clone()
+            .expect("Failed to clone for cleanup"),
+    )));
 
     let port_for_control = serial_port
         .try_clone()
@@ -128,6 +134,26 @@ fn main() {
         sensor::sensor_poll_thread(&ctx_sensors, port_for_sensors);
     });
 
+    // ---------------------------------------------------------
+    // Shutdown Handler
+    // ---------------------------------------------------------
+
+    let cleanup_clone = Arc::clone(&port_for_cleanup);
+
+    ctrlc::set_handler(move || {
+        println!("\nReceived shutdown signal! Tearing down threads and releasing UART...");
+
+        if let Ok(mut lock) = cleanup_clone.lock() {
+            if let Some(port) = lock.take() {
+                drop(port);
+            }
+        }
+
+        std::process::exit(0);
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    println!("navd is running in the background. Press Ctrl+C to exit.");
     loop {
         std::thread::park();
     }
