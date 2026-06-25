@@ -10,10 +10,12 @@ const GOALPOST_SPACING_MM: f32 = 1000.0;
 const T_LOST_MS: u64 = 1500;
 const SENTINEL_TAG_ID: u16 = 587;
 const YIELD_DISTANCE_MM: f32 = 500.0;
-const BLEND_START_MM: f32 = 1000.0;
+const CROSSING_DISTANCE_MM: f32 = 1500.0;
 
 const KP_LAT: f32 = 0.05;
-const KP_YAW: f32 = 20.0;
+const KD_LAT: f32 = 0.02;
+const D_FILTER_ALPHA: f32 = 0.2;
+
 const BASE_SPEED: f32 = 40.0;
 const APPROACH_SPEED: f32 = 20.0;
 
@@ -36,6 +38,10 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
     let mut logged_unsafe_lost = false;
 
     let mut goalpost_state = GoalpostState::Searching;
+
+    let mut last_tx_target = 0.0;
+    let mut last_update_us = crate::capture_timestamp_us();
+    let mut smoothed_d_tx = 0.0;
 
     loop {
         let snapshot = {
@@ -170,7 +176,7 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
                             min_dist_mm: min_dist_mm.min(current_min_dist),
                         };
                     } else if now_ms.saturating_sub(lost_since_ms) > 300 {
-                        if min_dist_mm < YIELD_DISTANCE_MM {
+                        if min_dist_mm < CROSSING_DISTANCE_MM {
                             target_goalpost += 2;
                             ctx.nav
                                 .current_goalpost
@@ -192,7 +198,14 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
             }
 
             if current_state == RobotState::Navigating as u8 {
-                let (left_cmd, right_cmd) = calculate_steering(left_tag, right_tag);
+                let (left_cmd, right_cmd) = calculate_steering(
+                    left_tag,
+                    right_tag,
+                    &mut last_tx_target,
+                    &mut last_update_us,
+                    &mut smoothed_d_tx,
+                );
+
                 trace!("Calculated steering: L={}, R={}", left_cmd, right_cmd);
                 ctx.nav.update(left_cmd, right_cmd);
             }
@@ -203,6 +216,9 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
 fn calculate_steering(
     left_tag: Option<&AprilTagDetection>,
     right_tag: Option<&AprilTagDetection>,
+    last_tx_target: &mut f32,
+    last_update_us: &mut u64,
+    smoothed_d_tx: &mut f32,
 ) -> (i8, i8) {
     if left_tag.is_none() && right_tag.is_none() {
         return (0, 0);
@@ -221,7 +237,7 @@ fn calculate_steering(
         _ => unreachable!(),
     };
 
-    let current_base_speed = if closer_tag.distance_mm < 400.0 {
+    let current_base_speed = if closer_tag.distance_mm < 1800.0 {
         APPROACH_SPEED
     } else {
         BASE_SPEED
@@ -230,34 +246,31 @@ fn calculate_steering(
     let tx_target = match (left_tag, right_tag) {
         (Some(l), Some(r)) => f32::midpoint(l.tx, r.tx),
         (Some(l), None) => {
-            let tx_visible = l.tx;
-            let tx_inferred = tx_visible + GOALPOST_SPACING_MM;
-            let tx_midpoint = f32::midpoint(tx_visible, tx_inferred);
-
-            let w = (1.0 - (l.tz.abs() / BLEND_START_MM)).clamp(0.0, 0.6);
-            tx_midpoint + w * (tx_visible - tx_midpoint)
+            let tx_inferred = l.tx + GOALPOST_SPACING_MM;
+            f32::midpoint(l.tx, tx_inferred)
         }
         (None, Some(r)) => {
-            let tx_visible = r.tx;
-            let tx_inferred = tx_visible - GOALPOST_SPACING_MM;
-            let tx_midpoint = f32::midpoint(tx_visible, tx_inferred);
-
-            let w = (1.0 - (r.tz.abs() / BLEND_START_MM)).clamp(0.0, 0.6);
-            tx_midpoint + w * (tx_visible - tx_midpoint)
+            let tx_inferred = r.tx - GOALPOST_SPACING_MM;
+            f32::midpoint(r.tx, tx_inferred)
         }
         _ => 0.0,
     };
 
-    let lateral_error = tx_target;
+    let now_us = crate::capture_timestamp_us();
+    let dt_s = (now_us.saturating_sub(*last_update_us)) as f32 / 1_000_000.0;
 
-    let mut heading_error = closer_tag.yaw;
-    if heading_error > 90.0 {
-        heading_error -= 180.0;
-    } else if heading_error < -90.0 {
-        heading_error += 180.0;
-    }
+    let raw_d_tx = if dt_s > 0.001 {
+        (tx_target - *last_tx_target) / dt_s
+    } else {
+        0.0
+    };
 
-    let correction = KP_YAW.mul_add(heading_error, KP_LAT * lateral_error);
+    *smoothed_d_tx = D_FILTER_ALPHA * raw_d_tx + (1.0 - D_FILTER_ALPHA) * (*smoothed_d_tx);
+
+    *last_tx_target = tx_target;
+    *last_update_us = now_us;
+
+    let correction = KP_LAT * tx_target + KD_LAT * (*smoothed_d_tx);
 
     let left_cmd = (current_base_speed + correction).clamp(-100.0, 100.0) as i8;
     let right_cmd = (current_base_speed - correction).clamp(-100.0, 100.0) as i8;
