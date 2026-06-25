@@ -93,6 +93,8 @@ fn main() {
                 libc::sem_wait(sem);
             }
 
+            trace!("vision_reader: Semaphore acquired! Reading frame...");
+
             let shared = unsafe { &*thread_safe_wrapper.0 };
 
             if let Some(snapshot) = shared.read_seqlock() {
