@@ -1,3 +1,4 @@
+use log::{info, trace, warn};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -17,7 +18,7 @@ const BASE_SPEED: f32 = 40.0;
 const APPROACH_SPEED: f32 = 20.0;
 
 pub fn navigator_thread(ctx: &Arc<NavdContext>) {
-    println!("Navigator thread started.");
+    info!("Navigator thread started.");
 
     loop {
         let snapshot = {
@@ -38,7 +39,7 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
         if current_state == RobotState::Navigating as u8
             && now_ms.saturating_sub(last_seen) > T_LOST_MS
         {
-            println!("Lost visual contact for >1500ms. Transitioning to PANICKING.");
+            warn!("Lost visual contact for >{T_LOST_MS}ms. Transitioning to PANICKING.");
             ctx.state
                 .store(RobotState::Panicking as u8, Ordering::Release);
             ctx.nav.update(0, 0);
@@ -50,10 +51,7 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
             let frame_age_ms = now_us.saturating_sub(snap.timestamp_us) / 1000;
 
             if frame_age_ms > 100 {
-                println!(
-                    "WARNING: Vision data is stale ({} ms old). Skipping frame.",
-                    frame_age_ms
-                );
+                warn!("Vision data is stale ({frame_age_ms} ms old). Skipping frame.",);
                 continue;
             }
 
@@ -63,7 +61,8 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
                 && let Some(sentinel) = active_tags.iter().find(|t| t.id == SENTINEL_TAG_ID)
                 && sentinel.distance_mm < YIELD_DISTANCE_MM
             {
-                println!("Reached sentinel tag. Transitioning to YIELDING.");
+                let distance = sentinel.distance_mm;
+                info!("Reached sentinel tag ({distance}mm). Transitioning to YIELDING.",);
                 ctx.state
                     .store(RobotState::Yielding as u8, Ordering::Release);
                 ctx.nav.update(0, 0);
@@ -96,7 +95,7 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
                 ctx.nav
                     .current_goalpost
                     .store(target_goalpost, Ordering::Relaxed);
-                println!(
+                info!(
                     "Crossed goalpost! Now tracking ({}, {})",
                     target_goalpost,
                     target_goalpost + 1
@@ -105,6 +104,7 @@ pub fn navigator_thread(ctx: &Arc<NavdContext>) {
 
             if current_state == RobotState::Navigating as u8 {
                 let (left_cmd, right_cmd) = calculate_steering(left_tag, right_tag);
+                trace!("Calculated steering: L={}, R={}", left_cmd, right_cmd);
                 ctx.nav.update(left_cmd, right_cmd);
             }
         }

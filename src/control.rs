@@ -1,5 +1,6 @@
 #![allow(clippy::similar_names)]
 
+use log::{error, info, trace, warn};
 use serialport::SerialPort;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -9,7 +10,7 @@ use crate::state::{NavdContext, RobotState};
 use crate::uart;
 
 pub fn control_thread(ctx: &Arc<NavdContext>, mut port: Box<dyn SerialPort>) {
-    println!("Control thread started at 50 Hz.");
+    info!("Control thread started.");
 
     loop {
         let state = ctx.state.load(Ordering::Acquire);
@@ -24,6 +25,7 @@ pub fn control_thread(ctx: &Arc<NavdContext>, mut port: Box<dyn SerialPort>) {
             let last_packet = ctx.rc.last_packet_ms.load(Ordering::Acquire);
 
             if now_ms.saturating_sub(last_packet) > 500 {
+                warn!("RC override timeout (>500ms). Stopping.");
                 out_cmd = uart::CMD_STOP;
             } else {
                 let rc = ctx.rc.read();
@@ -44,9 +46,11 @@ pub fn control_thread(ctx: &Arc<NavdContext>, mut port: Box<dyn SerialPort>) {
                     }
 
                     if lift != 0 {
+                        trace!("Sending RC LIFT command: {}", lift);
                         out_cmd = uart::CMD_LIFT;
                         payload.push(lift as u8);
                     } else {
+                        trace!("Sending RC DRIVE command: L:{}, R:{}", left, right);
                         out_cmd = uart::CMD_DRIVE;
                         payload.push(left as u8);
                         payload.push(right as u8);
@@ -64,7 +68,7 @@ pub fn control_thread(ctx: &Arc<NavdContext>, mut port: Box<dyn SerialPort>) {
 
         let frame = uart::build_frame(out_cmd, &payload);
         if let Err(e) = port.write_all(&frame) {
-            eprintln!("UART Write Error: {e}");
+            error!("UART Write Error (Control): {e}");
         }
 
         std::thread::sleep(Duration::from_millis(20));

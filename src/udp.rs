@@ -1,5 +1,6 @@
 #![allow(clippy::similar_names)]
 
+use log::{error, info, warn};
 use std::net::UdpSocket;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -15,7 +16,7 @@ pub fn listener_thread(ctx: &Arc<NavdContext>) {
 
     let mut buf = [0u8; 8];
 
-    println!("UDP Listener bound to port 5005");
+    info!("UDP Listener bound to port 5005");
 
     loop {
         match socket.recv_from(&mut buf) {
@@ -23,12 +24,12 @@ pub fn listener_thread(ctx: &Arc<NavdContext>) {
                 if size == 8 {
                     handle_packet(ctx, buf);
                 } else {
-                    eprintln!("Received malformed UDP packet of size {size}");
+                    warn!("Received malformed UDP packet of size {size}");
                 }
             }
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::WouldBlock {
-                    eprintln!("UDP Socket error: {e}");
+                    error!("UDP Socket error: {e}");
                 }
             }
         }
@@ -54,7 +55,7 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: [u8; 8]) {
             if current_state != RobotState::RcOverride as u8 {
                 ctx.state
                     .store(RobotState::RcOverride as u8, Ordering::Release);
-                println!("Transitioned to RC_OVERRIDE");
+                info!("Transitioned to RC_OVERRIDE via UDP command");
             }
 
             let cmd = RcCommand {
@@ -82,7 +83,7 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: [u8; 8]) {
                 });
 
                 if is_visible {
-                    println!(
+                    info!(
                         "Target goalpost ({}, {}) is visible. Resuming NAVIGATING.",
                         target_goalpost,
                         target_goalpost + 1
@@ -90,8 +91,8 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: [u8; 8]) {
                     ctx.state
                         .store(RobotState::Navigating as u8, Ordering::Release);
                 } else {
-                    println!(
-                        "Command rejected: Target goalpost ({}, {}) is not visible.",
+                    warn!(
+                        "Command rejected: Target goalpost ({}, {}) is not visible. Staying in RC.",
                         target_goalpost,
                         target_goalpost + 1
                     );
@@ -99,7 +100,7 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: [u8; 8]) {
             }
         }
         _ => {
-            eprintln!("Received unknown packet TYPE: {packet_type}");
+            warn!("Received unknown UDP packet TYPE: {packet_type:#04X}");
         }
     }
 }

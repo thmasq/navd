@@ -1,3 +1,4 @@
+use log::{error, info, trace, warn};
 use serialport::SerialPort;
 use std::io::Read;
 use std::sync::Arc;
@@ -8,7 +9,7 @@ use crate::state::{NavdContext, RobotState};
 use crate::uart;
 
 pub fn sensor_poll_thread(ctx: &Arc<NavdContext>, mut port: Box<dyn SerialPort>) {
-    println!("Sensor poll thread started at 20 Hz.");
+    info!("Sensor poll thread started.");
 
     let tick_duration = Duration::from_millis(50);
 
@@ -19,7 +20,7 @@ pub fn sensor_poll_thread(ctx: &Arc<NavdContext>, mut port: Box<dyn SerialPort>)
 
         let poll_frame = uart::build_frame(uart::CMD_SENSOR_POLL, &[]);
         if let Err(e) = port.write_all(&poll_frame) {
-            eprintln!("UART Write Error (Sensor Poll): {e}");
+            error!("UART Write Error (Sensor Poll): {e}");
         }
 
         // Expected frame size: 1(AA) + 1(CMD) + 1(LEN) + 5(PAYLOAD) + 1(CRC) = 9 bytes
@@ -62,8 +63,9 @@ pub fn sensor_poll_thread(ctx: &Arc<NavdContext>, mut port: Box<dyn SerialPort>)
                                     if (flags & 0x07) != 0 {
                                         let state = ctx.state.load(Ordering::Acquire);
                                         if state == RobotState::Navigating as u8 {
-                                            println!(
-                                                "CRITICAL: Collision detected! Transitioning to PANICKING."
+                                            error!(
+                                                "Collision detected (flags: {:#04X})! Transitioning to PANICKING.",
+                                                flags
                                             );
                                             ctx.state.store(
                                                 RobotState::Panicking as u8,
@@ -73,16 +75,18 @@ pub fn sensor_poll_thread(ctx: &Arc<NavdContext>, mut port: Box<dyn SerialPort>)
                                     }
                                 }
                             } else {
-                                eprintln!("Sensor Poll: CRC mismatch");
+                                warn!("Sensor Poll: CRC mismatch");
                             }
                             break;
                         }
                     }
                 }
                 Ok(_) => {}
-                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                    trace!("UART Read Timeout (expected behavior if no data)");
+                }
                 Err(e) => {
-                    eprintln!("UART Read Error (Sensor Poll): {e}");
+                    error!("UART Read Error (Sensor Poll): {e}");
                     break;
                 }
             }

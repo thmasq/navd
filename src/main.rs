@@ -12,6 +12,7 @@ mod uart;
 mod udp;
 mod vision;
 
+use log::{debug, info, trace, warn};
 use memmap2::MmapOptions;
 use state::NavdContext;
 use std::ffi::CString;
@@ -27,7 +28,8 @@ unsafe impl Send for SharedMemoryPtr {}
 static TIMER_FREQ: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
 
 fn main() {
-    println!("Starting navd...");
+    env_logger::init();
+    info!("Starting navd...");
 
     let ctx = Arc::new(NavdContext::new());
 
@@ -35,7 +37,7 @@ fn main() {
         if let Ok(f) = OpenOptions::new().read(true).open("/dev/shm/tags.bin") {
             break f;
         }
-        println!("Waiting for vision process to initialize /dev/shm/tags.bin...");
+        debug!("Waiting for vision process to initialize /dev/shm/tags.bin...");
         std::thread::sleep(Duration::from_millis(500));
     };
 
@@ -84,7 +86,7 @@ fn main() {
             s
         };
 
-        println!("vision_reader: Waiting for semaphore...");
+        trace!("vision_reader: Waiting for semaphore...");
 
         loop {
             unsafe {
@@ -97,7 +99,7 @@ fn main() {
                 ctx_vision.vision.update(snapshot);
                 ctx_vision.vision.new_frame_cv.notify_one();
             } else {
-                eprintln!("vision_reader: Torn read detected despite semaphore.");
+                warn!("vision_reader: Torn read detected despite semaphore.");
             }
         }
     });
@@ -141,7 +143,7 @@ fn main() {
     let cleanup_clone = Arc::clone(&port_for_cleanup);
 
     ctrlc::set_handler(move || {
-        println!("\nReceived shutdown signal! Tearing down threads and releasing UART...");
+        info!("Received shutdown signal! Tearing down threads and releasing UART...");
 
         if let Ok(mut lock) = cleanup_clone.lock() {
             if let Some(port) = lock.take() {
@@ -153,7 +155,7 @@ fn main() {
     })
     .expect("Error setting Ctrl-C handler");
 
-    println!("navd is running in the background. Press Ctrl+C to exit.");
+    info!("navd is running in the background. Press Ctrl+C to exit.");
     loop {
         std::thread::park();
     }

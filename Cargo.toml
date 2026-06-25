@@ -5,7 +5,9 @@ edition = "2024"
 
 [dependencies]
 ctrlc = { version = "3.5.2", features = ["termination"] }
+env_logger = "0.11.10"
 libc = "0.2.186"
+log = "0.4.33"
 memmap2 = "0.9.11"
 serde = { version = "1.0.228", features = ["derive"] }
 serialport = "4.9.0"
