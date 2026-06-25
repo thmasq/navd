@@ -47,7 +47,7 @@ fn main() {
 
     let shared_tags_ptr = SharedMemoryPtr(mmap.as_ptr().cast::<vision::SharedTags>());
 
-    let serial_port = serialport::new("/dev/ttyS0", 115_200)
+    let serial_port = serialport::new("/dev/ttyAMA0", 115_200)
         .timeout(Duration::from_millis(10))
         .open()
         .expect("Failed to open /dev/ttyS0");
