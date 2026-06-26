@@ -15,11 +15,10 @@ jobs:
     env:
       SYSROOT: ${{ github.workspace }}/pi-sysroot
       
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-musl-gcc
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gcc
       CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: >
         -L ${{ github.workspace }}/pi-sysroot/usr/lib
         -L ${{ github.workspace }}/pi-sysroot/lib
-        -C link-arg=--sysroot=${{ github.workspace }}/pi-sysroot
         -C target-feature=-crt-static
         -C link-arg=-fuse-ld=lld
         -C target-cpu=cortex-a53
@@ -47,22 +46,27 @@ jobs:
       - name: Install LLD Linker
         run: sudo apt-get update && sudo apt-get install -y lld
 
-      - name: Download and setup aarch64-linux-musl cross-compiler
+      - name: Download and setup Bootlin aarch64-musl cross-compiler
         run: |
-          wget https://musl.cc/aarch64-linux-musl-cross.tgz
-          tar -xf aarch64-linux-musl-cross.tgz -C /opt
-          echo "/opt/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
+          wget https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-2025.08-1.tar.xz
+          sudo tar -xf aarch64--musl--stable-2025.08-1.tar.xz -C /opt
+          cd /opt/aarch64--musl--stable-2025.08-1
+          sudo ./relocate-sdk.sh
+          echo "/opt/aarch64--musl--stable-2025.08-1/bin" >> $GITHUB_PATH
 
       - name: Extract minimal pi-sysroot
         run: |
           mkdir -p ${{ github.workspace }}/pi-sysroot
           tar -xzvf ci/navd-minimal-sysroot.tar.gz -C ${{ github.workspace }}/pi-sysroot
 
+      - name: Remove local Cargo config
+        run: rm -f .cargo/config.toml
+
       - name: Build for Alpine (Release)
-        run: cargo build --release --target aarch64-unknown-linux-musl --manifest-path navd/Cargo.toml
+        run: cargo build --release --target aarch64-unknown-linux-musl
 
       - name: Rename binary for release
-        run: mv navd/target/aarch64-unknown-linux-musl/release/navd navd-aarch64-musl
+        run: mv target/aarch64-unknown-linux-musl/release/navd navd-aarch64-musl
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
