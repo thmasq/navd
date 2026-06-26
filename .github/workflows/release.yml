@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    env:
+      SYSROOT: ${{ github.workspace }}/pi-sysroot
+      
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-musl-gcc
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: >
+        -L ${{ github.workspace }}/pi-sysroot/usr/lib
+        -L ${{ github.workspace }}/pi-sysroot/lib
+        -C link-arg=--sysroot=${{ github.workspace }}/pi-sysroot
+        -C target-feature=-crt-static
+        -C link-arg=-fuse-ld=lld
+        -C target-cpu=cortex-a53
+
+      PKG_CONFIG_ALLOW_CROSS_aarch64_unknown_linux_musl: "1"
+      PKG_CONFIG_SYSROOT_DIR_aarch64_unknown_linux_musl: ${{ github.workspace }}/pi-sysroot
+      PKG_CONFIG_PATH_aarch64_unknown_linux_musl: ${{ github.workspace }}/pi-sysroot/usr/lib/pkgconfig
+      PKG_CONFIG_ALL_DYNAMIC: "1"
+
+      BINDGEN_EXTRA_CLANG_ARGS: >
+        --sysroot=${{ github.workspace }}/pi-sysroot
+        -I${{ github.workspace }}/pi-sysroot/usr/include
+        -I${{ github.workspace }}/pi-sysroot/usr/include/c++/15.2.0
+        -I${{ github.workspace }}/pi-sysroot/usr/include/c++/15.2.0/aarch64-alpine-linux-musl
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - name: Install LLD Linker
+        run: sudo apt-get update && sudo apt-get install -y lld
+
+      - name: Download and setup aarch64-linux-musl cross-compiler
+        run: |
+          wget https://musl.cc/aarch64-linux-musl-cross.tgz
+          tar -xf aarch64-linux-musl-cross.tgz -C /opt
+          echo "/opt/aarch64-linux-musl-cross/bin" >> $GITHUB_PATH
+
+      - name: Extract minimal pi-sysroot
+        run: |
+          mkdir -p ${{ github.workspace }}/pi-sysroot
+          tar -xzvf ci/navd-minimal-sysroot.tar.gz -C ${{ github.workspace }}/pi-sysroot
+
+      - name: Build for Alpine (Release)
+        run: cargo build --release --target aarch64-unknown-linux-musl --manifest-path navd/Cargo.toml
+
+      - name: Rename binary for release
+        run: mv navd/target/aarch64-unknown-linux-musl/release/navd navd-aarch64-musl
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: navd-aarch64-musl
