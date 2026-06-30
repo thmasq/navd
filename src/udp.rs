@@ -67,20 +67,32 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: [u8; 8]) {
             ctx.rc.update(&cmd, now_ms);
         }
         0x02 => {
-            // TYPE = 0x02: Return to autonomous mode
-            let current_state = ctx.state.load(Ordering::Acquire);
+            let override_mode = ctx.overrides.mode.load(Ordering::Acquire);
 
-            if current_state == RobotState::RcOverride as u8 {
-                let is_visible = ctx.vision.snapshot.lock().is_ok_and(|snap_lock| {
-                    snap_lock.as_ref().is_some_and(|snap| snap.tag_count > 0)
-                });
+            if override_mode == crate::state::OverrideMode::Record as u8 {
+                let current = ctx.overrides.is_recording.load(Ordering::Acquire);
+                ctx.overrides
+                    .is_recording
+                    .store(!current, Ordering::Release);
+                info!("Recording toggled: {}", !current);
+            } else if override_mode == crate::state::OverrideMode::Replay as u8 {
+                ctx.overrides.replay_trigger.store(true, Ordering::Release);
+                info!("Replay triggered from start");
+            } else {
+                let current_state = ctx.state.load(Ordering::Acquire);
 
-                if is_visible {
-                    info!("Tags are visible. Resuming NAVIGATING.");
-                    ctx.state
-                        .store(RobotState::Navigating as u8, Ordering::Release);
-                } else {
-                    warn!("Command rejected: No tags are visible. Staying in RC.");
+                if current_state == RobotState::RcOverride as u8 {
+                    let is_visible = ctx.vision.snapshot.lock().is_ok_and(|snap_lock| {
+                        snap_lock.as_ref().is_some_and(|snap| snap.tag_count > 0)
+                    });
+
+                    if is_visible {
+                        info!("Tags are visible. Resuming NAVIGATING.");
+                        ctx.state
+                            .store(RobotState::Navigating as u8, Ordering::Release);
+                    } else {
+                        warn!("Command rejected: No tags are visible. Staying in RC.");
+                    }
                 }
             }
         }

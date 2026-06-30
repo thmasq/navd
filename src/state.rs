@@ -1,7 +1,7 @@
 use crate::vision::MAX_TAGS;
 
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -11,6 +11,20 @@ pub enum RobotState {
     Yielding = 2,
     Panicking = 3,
     RcOverride = 4,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum OverrideMode {
+    None = 0,
+    Record = 1,
+    Replay = 2,
+}
+
+pub struct OverrideShared {
+    pub mode: AtomicU8,
+    pub is_recording: AtomicBool,
+    pub replay_trigger: AtomicBool,
 }
 
 // ---------------
@@ -123,6 +137,7 @@ impl SensorShared {
 // ----------------
 pub struct NavdContext {
     pub state: AtomicU8,
+    pub overrides: OverrideShared,
     pub vision: VisionShared,
     pub nav: NavShared,
     pub rc: RcShared,
@@ -131,8 +146,23 @@ pub struct NavdContext {
 
 impl NavdContext {
     pub fn new() -> Self {
+        let record = std::env::var("RECORD").is_ok();
+        let replay = std::env::var("REPLAY").is_ok();
+        let mode = if record {
+            OverrideMode::Record as u8
+        } else if replay {
+            OverrideMode::Replay as u8
+        } else {
+            OverrideMode::None as u8
+        };
+
         Self {
             state: AtomicU8::new(RobotState::Boot as u8),
+            overrides: OverrideShared {
+                mode: AtomicU8::new(mode),
+                is_recording: AtomicBool::new(false),
+                replay_trigger: AtomicBool::new(false),
+            },
             vision: VisionShared {
                 snapshot: Mutex::new(None),
                 new_frame_cv: std::sync::Condvar::new(),
