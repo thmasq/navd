@@ -77,6 +77,7 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: [u8; 8]) {
                 info!("Recording toggled: {}", !current);
             } else if override_mode == crate::state::OverrideMode::Replay as u8 {
                 ctx.overrides.replay_trigger.store(true, Ordering::Release);
+                ctx.state.store(RobotState::Boot as u8, Ordering::Release);
                 info!("Replay triggered from start");
             } else {
                 let current_state = ctx.state.load(Ordering::Acquire);
