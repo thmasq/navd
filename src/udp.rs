@@ -71,31 +71,16 @@ fn handle_packet(ctx: &Arc<NavdContext>, buf: [u8; 8]) {
             let current_state = ctx.state.load(Ordering::Acquire);
 
             if current_state == RobotState::RcOverride as u8 {
-                let target_goalpost = ctx.nav.current_goalpost.load(Ordering::Relaxed);
-
                 let is_visible = ctx.vision.snapshot.lock().is_ok_and(|snap_lock| {
-                    snap_lock.as_ref().is_some_and(|snap| {
-                        let active_tags = &snap.tags[0..snap.tag_count as usize];
-                        active_tags
-                            .iter()
-                            .any(|t| t.id == target_goalpost || t.id == target_goalpost + 1)
-                    })
+                    snap_lock.as_ref().is_some_and(|snap| snap.tag_count > 0)
                 });
 
                 if is_visible {
-                    info!(
-                        "Target goalpost ({}, {}) is visible. Resuming NAVIGATING.",
-                        target_goalpost,
-                        target_goalpost + 1
-                    );
+                    info!("Tags are visible. Resuming NAVIGATING.");
                     ctx.state
                         .store(RobotState::Navigating as u8, Ordering::Release);
                 } else {
-                    warn!(
-                        "Command rejected: Target goalpost ({}, {}) is not visible. Staying in RC.",
-                        target_goalpost,
-                        target_goalpost + 1
-                    );
+                    warn!("Command rejected: No tags are visible. Staying in RC.");
                 }
             }
         }
